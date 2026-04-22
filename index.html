@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>台灣 SDS 智能分析與危害標示生成器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    
+    <!-- 解析庫 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap');
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background-color: #f8fafc;
+            color: #1e293b;
+        }
+        :root {
+            --shihlin-navy: #0d1b3e;
+            --shihlin-red: #da291c;
+            --shihlin-blue: #005bac;
+        }
+        /* GHS Label 橫向寬版樣式 */
+        .ghs-label {
+            border: 6px solid #da291c; 
+            background-color: #ffffff;
+            padding: 3.5rem 3.5rem; 
+            border-radius: 4px;
+            width: 100%;
+            max-width: 1100px; 
+            margin: 0 auto;
+            position: relative;
+        }
+        /* 兩欄併排佈局 */
+        .label-grid-container {
+            display: grid;
+            grid-template-columns: 1fr 1.2fr;
+            gap: 2.5rem;
+            text-align: left;
+        }
+        .full-width-section {
+            grid-column: span 2;
+        }
+        .label-title-area {
+            margin-bottom: 5.5rem; 
+        }
+        [contenteditable="true"]:hover {
+            background-color: #f1f5f9;
+            outline: 1px dashed #94a3b8;
+            cursor: text;
+        }
+        [contenteditable="true"]:focus {
+            background-color: #f1f5f9;
+            outline: 2px solid #005bac;
+        }
+        .loader {
+            border-top-color: #da291c;
+            animation: spinner 1.5s linear infinite;
+        }
+        @keyframes spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .card-custom {
+            background: white;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            border: 1px solid #e2e8f0;
+        }
+    </style>
+</head>
+<body class="antialiased min-h-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="bg-[#0d1b3e] text-white shadow-xl border-b-4 border-[#da291c]">
+        <div class="container mx-auto px-6 py-5 flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <div class="bg-white p-2 rounded-full shadow-inner">
+                    <i class="fa-solid fa-flask-vial text-[#da291c] text-2xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-2xl font-black tracking-tight text-white">台灣化學品 SDS 智能分析系統</h1>
+                    <p class="text-[10px] text-blue-200 uppercase tracking-widest opacity-80">Shihlin Electric Style • Wide Layout</p>
+                </div>
+            </div>
+            <div class="hidden md:block text-right">
+                <span class="text-xs bg-red-600 px-3 py-1 rounded-full text-white font-bold shadow-lg"> 圖庫版</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="container mx-auto px-4 py-8 flex-grow">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            
+            <!-- 左側控制面板 -->
+            <div class="lg:col-span-1 space-y-6">
+                
+                <!-- 1. 圖片設定 (一鍵打包寫死區) -->
+                <div id="builderPanel" class="card-custom p-5 border-t-4 border-amber-500 hidden">
+                    <h2 class="text-sm font-bold text-slate-800 mb-2 flex items-center gap-2">
+                        <i class="fa-solid fa-images text-amber-500"></i> 第一步：圖庫寫死設定 (僅需做一次)
+                    </h2>
+                    <p class="text-[11px] text-slate-500 mb-4 leading-relaxed">請將 9 張圖片上傳填滿，然後點擊下方按鈕。系統將產出一個「圖片已完全寫死」的新 HTML 檔案，以後只要開那個新檔案，就永遠不用再上傳圖片了！</p>
+                    <div class="grid grid-cols-3 gap-2 mb-4" id="builderGrid"></div>
+                    <button id="exportHtmlBtn" class="w-full bg-[#da291c] hover:bg-red-800 text-white font-bold py-3 rounded shadow-lg transition hidden text-sm flex items-center justify-center gap-2 animate-bounce">
+                        <i class="fa-solid fa-file-export"></i> 📥 匯出「永久寫死版」HTML
+                    </button>
+                </div>
+
+                <!-- 2. 後端連線狀態 -->
+                <div class="card-custom p-4 border-t-4 border-blue-400 bg-blue-50/30">
+                    <h2 class="text-xs font-bold text-blue-800 mb-1">安全連線模式</h2>
+                    <p class="text-[10px] text-blue-600 mb-2">此版本會透過 Vercel 後端函式呼叫 Gemini，使用者端不需要輸入 API Key，也看不到你的金鑰。</p>
+                    <div class="text-[11px] text-slate-600 bg-white border border-blue-100 rounded p-2 leading-relaxed">
+                        前端呼叫：<code class="font-mono text-[#005bac]">/api/analyze</code><br>
+                        金鑰來源：<code class="font-mono text-[#005bac]">Vercel Environment Variable</code>
+                    </div>
+                </div>
+
+                <!-- 3. SDS 資料輸入 -->
+                <div class="card-custom p-5 border-t-4 border-[#005bac]">
+                    <h2 class="text-lg font-bold mb-4 flex items-center gap-2 text-[#0d1b3e]">
+                        <i class="fa-solid fa-file-signature"></i> 1. 資料載入
+                    </h2>
+                    <div class="mb-4 p-4 border-2 border-dashed border-slate-200 rounded-lg bg-slate-50 hover:bg-slate-100 transition group text-center">
+                        <label class="block text-sm font-bold text-slate-600 mb-2 cursor-pointer">
+                            <i class="fa-solid fa-upload mr-1 text-slate-400 group-hover:text-[#005bac]"></i> 上傳 SDS 檔案 (PDF/DOCX)
+                        </label>
+                        <input type="file" id="fileUpload" accept=".pdf,.docx" class="block w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-[#005bac] file:text-white hover:file:bg-[#0d1b3e] transition cursor-pointer"/>
+                        <div id="fileStatus" class="mt-2 text-[11px] text-blue-600 hidden font-bold"></div>
+                    </div>
+                    <textarea id="sdsInput" rows="6" class="w-full text-sm border border-slate-200 rounded-lg p-3 focus:ring-2 focus:ring-[#005bac] outline-none shadow-inner" placeholder="在此貼上 SDS 文字內容..."></textarea>
+                    <div class="mt-4">
+                        <button id="analyzeBtn" class="w-full bg-[#da291c] hover:bg-[#b91c1c] text-white font-bold py-3 px-6 rounded-lg shadow-lg transition transform active:scale-95 flex items-center justify-center gap-2 text-white">
+                            <i class="fa-solid fa-wand-magic-sparkles"></i> 2. 開始智能分析
+                        </button>
+                        <div id="errorMsg" class="text-red-500 text-xs mt-2 hidden text-center font-bold bg-red-50 p-2 rounded"></div>
+                    </div>
+                </div>
+
+                <!-- 4. 法規判定區 -->
+                <div class="flex flex-col gap-6">
+                    <div id="complianceCard" class="card-custom p-5 border-t-4 border-green-600 hidden">
+                        <h3 class="text-base font-bold mb-3 text-slate-700">法規符合性檢查</h3>
+                        <div id="complianceStatus" class="flex items-center gap-2 mb-3 p-2 rounded-lg bg-slate-50 text-xs"></div>
+                        <ul id="checklist" class="space-y-1.5 text-xs text-slate-600 mb-3 border-b border-slate-100 pb-3"></ul>
+                        <p id="complianceAnalysis" class="text-[10px] text-slate-500 italic"></p>
+                    </div>
+                    <div id="regulationCard" class="card-custom p-5 border-t-4 border-[#0d1b3e] hidden">
+                        <h3 class="text-base font-bold mb-2 text-slate-700">台灣法規列管判定 (全成分)</h3>
+                        <p class="text-[10px] text-slate-400 mb-4 italic">已比對：PEL、特化、毒化物、優管化。環測僅於列管時顯示。</p>
+                        <div id="regulationList" class="space-y-4 mt-4"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右側：生成與預覽 -->
+            <div class="lg:col-span-2 relative">
+                <div id="loadingState" class="hidden absolute inset-0 z-20 bg-white/95 flex flex-col items-center justify-center rounded-xl shadow-inner h-[600px]">
+                    <div class="loader ease-linear rounded-full border-4 border-t-4 border-slate-200 h-14 w-14 mb-4"></div>
+                    <p class="text-[#0d1b3e] font-bold text-lg animate-pulse">正在掃描全成分 CAS 並精準比對台灣法規...</p>
+                </div>
+
+                <div id="resultsSection" class="hidden">
+                    <div class="bg-[#0d1b3e] text-white p-4 rounded-t-xl flex items-center justify-between shadow-lg">
+                        <span class="text-sm font-bold"><i class="fa-solid fa-arrows-left-right mr-2 text-blue-400 text-white"></i>內容可手動編輯修正</span>
+                        <button id="downloadBtn" class="bg-[#da291c] hover:bg-white hover:text-[#da291c] text-white font-bold py-2 px-6 rounded shadow transition flex items-center gap-2 text-white">
+                            <i class="fa-solid fa-download"></i> 下載圖片 (.png)
+                        </button>
+                    </div>
+                    <!-- 標籤預覽主體 -->
+                    <div class="ghs-label shadow-2xl bg-white border-x-4 border-b-4 border-[#da291c] rounded-b-xl" id="ghsLabelContent"></div>
+                </div>
+                
+                <div id="initPrompt" class="flex flex-col items-center justify-center h-[500px] border-2 border-dashed border-slate-200 rounded-xl bg-white text-slate-300">
+                    <i class="fa-solid fa-display text-6xl mb-4 opacity-10"></i>
+                    <p class="font-bold text-lg text-slate-400 text-white">SDS 危害標示預覽區（Vercel 安全版）</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="bg-[#0d1b3e] text-slate-400 text-center py-6 border-t-2 border-[#da291c] mt-auto">
+        <p class="text-xs text-slate-300">© ぜんぜんわかんない  2026  台灣化學品 SDS 智能管理系統  </p>
+    </footer>
+
+    <script>
+        const API_ENDPOINT = '/api/analyze'; 
+        let lastParsedData = null;
+        let scannedImages = [];
+
+        // 定義所有圖示
+        const ghsInfo = [
+            { id: 'explos', name: '爆炸物' }, { id: 'flamme', name: '易燃物' }, { id: 'rondflam', name: '氧化性物質' },
+            { id: 'bottle', name: '加壓氣體' }, { id: 'acid', name: '腐蝕性物質' }, { id: 'skull', name: '急毒性物質' },
+            { id: 'exclam', name: '警告' }, { id: 'silhouete', name: '健康危害' }, { id: 'pollu', name: '環境危害' }
+        ];
+
+        // 這是預留給「寫死圖片」的欄位。匯出時，這裡會被真真實實的圖片代碼填滿。
+        const ghsBase64Map = {
+            'explos': '%%EXPLOS_BASE64%%', 'flamme': '%%FLAMME_BASE64%%', 'rondflam': '%%RONDFLAM_BASE64%%',
+            'bottle': '%%BOTTLE_BASE64%%', 'acid': '%%ACID_BASE64%%', 'skull': '%%SKULL_BASE64%%',
+            'exclam': '%%EXCLAM_BASE64%%', 'silhouete': '%%SILHOUETE_BASE64%%', 'pollu': '%%POLLU_BASE64%%'
+        };
+
+        // 檢查是否已經是被寫死的檔案 (只要其中一個代碼不含 %% 就代表已經寫死了)
+        const isEmbedded = !ghsBase64Map['explos'].includes('%%');
+        const localGhsMap = {}; 
+
+        if (!isEmbedded) {
+            // 還沒寫死，顯示設定面板讓使用者上傳
+            document.getElementById('builderPanel').classList.remove('hidden');
+            const grid = document.getElementById('builderGrid');
+            ghsInfo.forEach(item => {
+                const savedData = localStorage.getItem(`sds_ghs_${item.id}`);
+                if (savedData) localGhsMap[item.id] = savedData;
+
+                const box = document.createElement('div');
+                box.className = 'flex flex-col items-center justify-center border border-slate-200 rounded bg-slate-50 cursor-pointer h-20 relative hover:bg-blue-50 transition p-1 text-center';
+                
+                const updateBoxUI = (imgSrc) => {
+                    if (imgSrc) {
+                        box.innerHTML = `<img src="${imgSrc}" class="w-10 h-10 object-contain mb-1 shadow-sm"><span class="text-[10px] text-slate-800 font-bold leading-tight">${item.name}</span>`;
+                    } else {
+                        box.innerHTML = `<i class="fa-solid fa-plus text-slate-300 mb-1"></i><span class="text-[10px] text-slate-500 font-bold leading-tight">${item.name}</span>`;
+                    }
+                };
+                
+                updateBoxUI(savedData);
+
+                const input = document.createElement('input');
+                input.type = 'file'; input.accept = 'image/*'; input.className = 'hidden';
+                input.onchange = (e) => {
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = (ev) => {
+                        const base64 = ev.target.result;
+                        localGhsMap[item.id] = base64; 
+                        localStorage.setItem(`sds_ghs_${item.id}`, base64); 
+                        updateBoxUI(base64);
+                        box.appendChild(input); 
+                        if (Object.keys(localGhsMap).length === 9) document.getElementById('exportHtmlBtn').classList.remove('hidden');
+                    };
+                    reader.readAsDataURL(file);
+                };
+                box.onclick = () => input.click();
+                box.appendChild(input);
+                grid.appendChild(box);
+            });
+        } else {
+            // 已經是寫死版本，把寫死的圖片載入到 Map 中供後續使用
+            ghsInfo.forEach(item => {
+                localGhsMap[item.id] = ghsBase64Map[item.id];
+            });
+        }
+
+        // 執行「匯出寫死版 HTML」的動作
+        document.getElementById('exportHtmlBtn').addEventListener('click', async () => {
+            try {
+                let htmlContent = "";
+                try {
+                    const response = await fetch(location.href);
+                    htmlContent = await response.text();
+                } catch(e) {
+                    htmlContent = "<!DOCTYPE html>\n<html lang=\"zh-TW\">\n" + document.documentElement.innerHTML + "\n</html>";
+                }
+                
+                // 把佔位符替換為真正的 Base64 圖片碼
+                for (let key in localGhsMap) {
+                    const placeholder = `%%${key.toUpperCase()}_BASE64%%`;
+                    htmlContent = htmlContent.split(placeholder).join(localGhsMap[key]);
+                }
+                
+                const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+                const link = document.createElement('a'); 
+                link.download = 'SDS_危害標示_永久寫死版.html';
+                link.href = URL.createObjectURL(blob); 
+                link.click();
+                
+                alert("✅ 匯出成功！\n\n請前往您的下載資料夾，打開名為「SDS_危害標示_永久寫死版.html」的檔案。\n那個檔案裡的圖片已經完全寫死，未來不必再上傳圖片了！");
+            } catch (err) { alert("匯出失敗，請確認您的瀏覽器支援此操作。"); }
+        });
+
+        const ghsZhNames = {
+            'explos': '爆炸物', 'flamme': '易燃物', 'rondflam': '氧化性物質',
+            'bottle': '加壓氣體', 'acid': '腐蝕性物質', 'skull': '急毒性物質',
+            'exclam': '警告', 'silhouete': '健康危害', 'pollu': '環境危害'
+        };
+
+        const analyzeBtn = document.getElementById('analyzeBtn');
+        const sdsInput = document.getElementById('sdsInput');
+        const loadingState = document.getElementById('loadingState');
+        const resultsSection = document.getElementById('resultsSection');
+        const errorMsg = document.getElementById('errorMsg');
+        const initPrompt = document.getElementById('initPrompt');
+        const fileUpload = document.getElementById('fileUpload');
+        const fileStatus = document.getElementById('fileStatus');
+
+        if (window['pdfjs-dist/build/pdf']) {
+            window['pdfjs-dist/build/pdf'].GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        }
+
+        if (fileUpload) {
+            fileUpload.addEventListener('change', async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                fileStatus.textContent = '讀取中...';
+                fileStatus.classList.remove('hidden');
+                fileStatus.className = 'mt-2 text-xs text-blue-600 font-bold block animate-pulse';
+                scannedImages = [];
+                try {
+                    const arrayBuffer = await file.arrayBuffer();
+                    let extractedText = '';
+                    if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+                        const pdfjsLib = window['pdfjs-dist/build/pdf'];
+                        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer, cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/', cMapPacked: true }).promise;
+                        for (let i = 1; i <= pdf.numPages; i++) {
+                            const page = await pdf.getPage(i);
+                            const content = await page.getTextContent();
+                            extractedText += content.items.map(item => item.str).join(' ') + '\n';
+                        }
+                        if (extractedText.replace(/\s/g, '').length < 30) {
+                            fileStatus.textContent = '轉圖辨識中...';
+                            const maxPagesForVision = 4;
+                            const renderScale = 1.3;
+                            const jpegQuality = 0.6;
+                            for (let i = 1; i <= Math.min(pdf.numPages, maxPagesForVision); i++) {
+                                const page = await pdf.getPage(i);
+                                const viewport = page.getViewport({ scale: renderScale });
+                                const canvas = document.createElement('canvas');
+                                const ctx = canvas.getContext('2d');
+                                canvas.width = viewport.width; canvas.height = viewport.height;
+                                await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+                                scannedImages.push({ inlineData: { data: canvas.toDataURL('image/jpeg', jpegQuality).split(',')[1], mimeType: "image/jpeg" } });
+                            }
+                            extractedText = `[此 PDF 文字層不足，已改擷取前 ${Math.min(pdf.numPages, maxPagesForVision)} 頁影像送交分析]`;
+                        }
+                    } else if (file.name.toLowerCase().endsWith('.docx')) {
+                        const result = await mammoth.extractRawText({ arrayBuffer: arrayBuffer });
+                        extractedText = result.value;
+                    }
+                    sdsInput.value = extractedText;
+                    fileStatus.innerHTML = '<i class="fa-solid fa-circle-check"></i> 資料已載入！';
+                    fileStatus.className = 'mt-2 text-xs text-green-600 font-bold block';
+                } catch (error) { fileStatus.innerHTML = '讀取錯誤'; }
+            });
+        }
+        
+        async function fetchWithRetry(url, options) {
+            const delays = [1000, 2000, 4000];
+            for (let i = 0; i < 3; i++) {
+                try {
+                    const response = await fetch(url, options);
+                    let payload = null;
+                    try {
+                        payload = await response.json();
+                    } catch (_) {
+                        payload = null;
+                    }
+                    if (!response.ok) {
+                        const message = payload?.detail || payload?.error || `Status: ${response.status}`;
+                        throw new Error(message);
+                    }
+                    return payload;
+                } catch (error) {
+                    if (i === 2) throw error;
+                    await new Promise(resolve => setTimeout(resolve, delays[i]));
+                }
+            }
+        }
+
+        function estimateInlineDataBytes(items = []) {
+            return items.reduce((sum, item) => {
+                const base64 = item?.inlineData?.data || '';
+                return sum + Math.floor(base64.length * 0.75);
+            }, 0);
+        }
+
+        analyzeBtn.addEventListener('click', async () => {
+            const text = sdsInput.value.trim();
+            if (!text && scannedImages.length === 0) { showError("請輸入或上傳 SDS 內容！"); return; }
+
+            const approxVisionPayload = estimateInlineDataBytes(scannedImages);
+            const safePayloadLimit = 3.6 * 1024 * 1024;
+            if (approxVisionPayload > safePayloadLimit) {
+                showError("圖片型 PDF 轉出的內容過大，請改成只保留前幾頁、降低檔案大小，或直接貼上 SDS 文字。");
+                return;
+            }
+
+            hideError();
+            showLoading();
+
+            try {
+                const result = await fetchWithRetry(API_ENDPOINT, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        text,
+                        scannedImages
+                    })
+                });
+
+                lastParsedData = result;
+                renderResults(lastParsedData);
+            } catch (error) {
+                showError(`分析失敗：${error.message || '請稍後再試'}`);
+                hideLoading();
+            }
+        });
+
+        function renderResults(data) {
+            hideLoading();
+            resultsSection.classList.remove('hidden');
+            const ghsContainer = document.getElementById('ghsLabelContent');
+            
+            const codeMapper = {
+                'ghs01': 'explos', 'ghs02': 'flamme', 'ghs03': 'rondflam',
+                'ghs04': 'bottle', 'ghs05': 'acid', 'ghs06': 'skull',
+                'ghs07': 'exclam', 'ghs08': 'silhouete', 'ghs09': 'pollu',
+                '爆炸物': 'explos', '易燃物': 'flamme', '氧化性物質': 'rondflam',
+                '加壓氣體': 'bottle', '腐蝕': 'acid', '腐蝕性物質': 'acid', 
+                '急毒性': 'skull', '急毒性物質': 'skull', '警告': 'exclam', 
+                '健康危害': 'silhouete', '環境危害': 'pollu'
+            };
+            
+            let pictogramsHtml = '';
+            if (data.pictograms && data.pictograms.length > 0) {
+                pictogramsHtml = `<div class="flex flex-wrap gap-10 mb-8 justify-center">`; 
+                data.pictograms.forEach(rawCode => {
+                    let picCode = rawCode.trim().toLowerCase();
+                    if (codeMapper[picCode]) picCode = codeMapper[picCode]; 
+                    
+                    const imgSrc = localGhsMap[picCode]; 
+                    
+                    if (imgSrc && imgSrc.length > 100) { // 確保確實是 base64
+                        pictogramsHtml += `<img src="${imgSrc}" class="w-32 h-32 object-contain drop-shadow-md">`;
+                    } else {
+                        pictogramsHtml += `<div class="flex flex-col items-center justify-center border border-dashed border-red-200 w-32 h-32 text-[12px] text-red-500 font-bold text-center rounded bg-red-50">圖庫未載入<br>${ghsZhNames[picCode] || rawCode}</div>`;
+                    }
+                });
+                pictogramsHtml += `</div>`;
+            }
+
+            // 橫向分欄佈局
+            ghsContainer.innerHTML = `
+                <div class="text-center label-title-area full-width-section">
+                    <h2 class="text-5xl font-black text-slate-900 leading-tight tracking-tight" contenteditable="true">${data.productName || '化學品名稱'}</h2>
+                </div>
+                <div class="full-width-section">${pictogramsHtml}</div>
+                <div class="text-center mt-6 mb-10 border-b-4 border-slate-200 pb-8 full-width-section">
+                    <span class="text-6xl font-bold text-[#da291c] tracking-[1rem] block uppercase" contenteditable="true">${data.signalWord || '警示語'}</span>
+                </div>
+                <div class="label-grid-container">
+                    <div class="full-width-section mb-6">
+                        <h4 class="font-bold text-slate-900 text-2xl mb-3 border-l-8 border-[#da291c] pl-4 bg-slate-50 py-1">危害成分：</h4>
+                        <ul class="list-disc pl-14 text-slate-800 font-medium space-y-1 text-xl" contenteditable="true">
+                            ${(data.ingredients || []).map(ing => `<li>${ing}</li>`).join('') || '<li>無</li>'}
+                        </ul>
+                    </div>
+                    <div class="border-r border-slate-100 pr-6">
+                        <h4 class="font-bold text-slate-900 text-xl mb-3 border-l-8 border-[#005bac] pl-4">危害警告訊息：</h4>
+                        <ul class="list-disc pl-10 text-slate-800 font-medium space-y-1.5 text-lg" contenteditable="true">
+                            ${(data.hazardStatements || []).map(s => `<li>${s}</li>`).join('') || '<li>無相關訊息</li>'}
+                        </ul>
+                    </div>
+                    <div class="pl-2">
+                        <h4 class="font-bold text-slate-900 text-xl mb-3 border-l-8 border-slate-400 pl-4">危害防範措施：</h4>
+                        <ul class="list-disc pl-10 text-slate-800 font-medium space-y-1.5 text-lg leading-snug" contenteditable="true">
+                            ${(data.precautionaryStatements || []).map(s => `<li>${s}</li>`).join('') || '<li>無相關措施</li>'}
+                        </ul>
+                    </div>
+                </div>
+                <div class="mt-16 border-t-2 border-slate-200 pt-8 text-base text-slate-500 text-left leading-relaxed full-width-section">
+                    <p><strong>製造者/供應者：</strong> <span contenteditable="true" class="text-slate-800">${data.supplierName || '未提供'}</span></p>
+                    <p><strong>地址：</strong> <span contenteditable="true" class="text-slate-800">${data.supplierAddress || '未提供'}</span> | <strong>聯絡電話：</strong> <span contenteditable="true" class="text-slate-800">${data.電話 || data.supplierPhone || '未提供'}</span></p>
+                </div>
+            `;
+
+            // 左側面板更新
+            const compCard = document.getElementById('complianceCard'); compCard.classList.remove('hidden');
+            compCard.className = `card-custom p-5 border-t-4 ${data.compliance.isCompliant ? 'border-green-600' : 'border-red-600'}`;
+            document.getElementById('complianceStatus').innerHTML = `<i class="fa-solid ${data.compliance.isCompliant ? 'fa-circle-check text-green-600' : 'fa-triangle-exclamation text-red-600'} text-xl"></i><p class="font-bold text-sm text-[#1e293b]">法規格式檢查完畢</p>`;
+            document.getElementById('checklist').innerHTML = [
+                { label: '1. 化學品名稱', valid: !!data.productName }, { label: '2. 危害成分', valid: data.ingredients?.length > 0 },
+                { label: '3. 警示語', valid: !!data.signalWord }, { label: '4. 危害警告', valid: data.hazardStatements?.length > 0 },
+                { label: '5. 防範措施', valid: data.precautionaryStatements?.length > 0 }, { label: '6. 廠商資訊', valid: !!data.supplierName }
+            ].map(el => `<li class="flex items-center gap-2">${el.valid ? '<i class="fa-solid fa-check text-green-500"></i>' : '<i class="fa-solid fa-xmark text-red-500"></i>'}<span class="text-xs ${el.valid ? '' : 'text-red-500'}">${el.label}</span></li>`).join('');
+            document.getElementById('complianceAnalysis').textContent = data.compliance.analysis;
+
+            const regCard = document.getElementById('regulationCard'); regCard.classList.remove('hidden');
+            const regList = document.getElementById('regulationList');
+            if (data.regulatoryMatches?.length > 0) {
+                regList.innerHTML = data.regulatoryMatches.map(item => {
+                    const filteredRegs = (item.regulations || []).filter(r => r.reason !== 'NO_SHOW');
+                    return `
+                        <div class="border-b border-slate-100 pb-3 last:border-0 last:pb-0">
+                            <p class="text-xs font-bold text-[#0d1b3e] mb-1.5">${item.ingredientName} (${item.casNo})</p>
+                            ${filteredRegs.map(r => `
+                                <div class="mb-2 ml-1">
+                                    <span class="inline-block ${r.name.includes('監測') ? 'bg-amber-100 text-amber-800 border-amber-200' : 'bg-slate-100 text-slate-700 border-slate-200'} text-[10px] px-2 py-0.5 rounded border font-bold">${r.name}</span>
+                                    <span class="text-[10px] text-slate-500 block mt-1 ml-1 italic leading-tight">↳ ${r.reason}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                }).join('');
+            } else { regList.innerHTML = '<p class="text-xs text-slate-400 italic">查無列管化學物質</p>'; }
+        }
+
+        document.getElementById('downloadBtn').addEventListener('click', () => {
+            const labelEl = document.getElementById('ghsLabelContent');
+            if (labelEl) {
+                const btn = document.getElementById('downloadBtn');
+                const originalHtml = btn.innerHTML;
+                btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 影像處理中...`; 
+                btn.disabled = true;
+                html2canvas(labelEl, { scale: 3, backgroundColor: "#ffffff", useCORS: true }).then(canvas => {
+                    const link = document.createElement('a'); 
+                    link.download = `Shihlin_Wide_Label_${Date.now()}.png`;
+                    link.href = canvas.toDataURL('image/png'); 
+                    link.click();
+                    btn.innerHTML = `<i class="fa-solid fa-check"></i> 下載成功`;
+                    setTimeout(() => { btn.innerHTML = originalHtml; btn.disabled = false; }, 2000);
+                });
+            }
+        });
+
+        function showLoading() { loadingState.classList.remove('hidden'); resultsSection.classList.add('hidden'); initPrompt.classList.add('hidden'); analyzeBtn.disabled = true; }
+        function hideLoading() { loadingState.classList.add('hidden'); analyzeBtn.disabled = false; }
+        function showError(msg) { errorMsg.textContent = msg; errorMsg.classList.remove('hidden'); }
+        function hideError() { errorMsg.classList.add('hidden'); }
+    </script>
+</body>
+</html>
