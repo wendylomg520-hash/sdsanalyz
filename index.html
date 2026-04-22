@@ -100,13 +100,10 @@
                 <!-- 1. 圖片設定 (一鍵打包寫死區) -->
                 <div id="builderPanel" class="card-custom p-5 border-t-4 border-amber-500 hidden">
                     <h2 class="text-sm font-bold text-slate-800 mb-2 flex items-center gap-2">
-                        <i class="fa-solid fa-images text-amber-500"></i> 第一步：圖庫寫死設定 (僅需做一次)
+                        <i class="fa-solid fa-images text-amber-500"></i> 第一步：GHS 圖示設定
                     </h2>
-                    <p class="text-[11px] text-slate-500 mb-4 leading-relaxed">請將 9 張圖片上傳填滿，然後點擊下方按鈕。系統將產出一個「圖片已完全寫死」的新 HTML 檔案，以後只要開那個新檔案，就永遠不用再上傳圖片了！</p>
+                    <p class="text-[11px] text-slate-500 mb-4 leading-relaxed">請將 9 張 GHS 圖示上傳完成。上傳後系統會直接使用這些圖示進行危害標示顯示。</p>
                     <div class="grid grid-cols-3 gap-2 mb-4" id="builderGrid"></div>
-                    <button id="exportHtmlBtn" class="w-full bg-[#da291c] hover:bg-red-800 text-white font-bold py-3 rounded shadow-lg transition hidden text-sm flex items-center justify-center gap-2 animate-bounce">
-                        <i class="fa-solid fa-file-export"></i> 📥 匯出「永久寫死版」HTML
-                    </button>
                 </div>
 
                 <!-- 2. 後端連線狀態 -->
@@ -245,7 +242,6 @@
                         localStorage.setItem(`sds_ghs_${item.id}`, base64); 
                         updateBoxUI(base64);
                         box.appendChild(input); 
-                        if (Object.keys(localGhsMap).length === 9) document.getElementById('exportHtmlBtn').classList.remove('hidden');
                     };
                     reader.readAsDataURL(file);
                 };
@@ -259,33 +255,6 @@
                 localGhsMap[item.id] = ghsBase64Map[item.id];
             });
         }
-
-        // 執行「匯出寫死版 HTML」的動作
-        document.getElementById('exportHtmlBtn').addEventListener('click', async () => {
-            try {
-                let htmlContent = "";
-                try {
-                    const response = await fetch(location.href);
-                    htmlContent = await response.text();
-                } catch(e) {
-                    htmlContent = "<!DOCTYPE html>\n<html lang=\"zh-TW\">\n" + document.documentElement.innerHTML + "\n</html>";
-                }
-                
-                // 把佔位符替換為真正的 Base64 圖片碼
-                for (let key in localGhsMap) {
-                    const placeholder = `%%${key.toUpperCase()}_BASE64%%`;
-                    htmlContent = htmlContent.split(placeholder).join(localGhsMap[key]);
-                }
-                
-                const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
-                const link = document.createElement('a'); 
-                link.download = 'SDS_危害標示_永久寫死版.html';
-                link.href = URL.createObjectURL(blob); 
-                link.click();
-                
-                alert("✅ 匯出成功！\n\n請前往您的下載資料夾，打開名為「SDS_危害標示_永久寫死版.html」的檔案。\n那個檔案裡的圖片已經完全寫死，未來不必再上傳圖片了！");
-            } catch (err) { alert("匯出失敗，請確認您的瀏覽器支援此操作。"); }
-        });
 
         const ghsZhNames = {
             'explos': '爆炸物', 'flamme': '易燃物', 'rondflam': '氧化性物質',
